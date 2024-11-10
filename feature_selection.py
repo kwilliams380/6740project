@@ -52,7 +52,7 @@ imputer = SimpleImputer(strategy='mean')
 X_imputed = imputer.fit_transform(X)
 
 # Feature Selection
-selector = SelectKBest(score_func=f_regression, k=10)
+selector = SelectKBest(score_func=f_regression, k=15)
 X_new = selector.fit_transform(X_imputed, y)
 selected_indices = selector.get_support(indices=True)
 selected_features = X.columns[selected_indices]
