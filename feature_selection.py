@@ -17,55 +17,75 @@ batting['playerID'] = batting['playerID'].astype(str)
 pitching['playerID'] = pitching['playerID'].astype(str)
 savant_pitch_data['player_id'] = savant_pitch_data['player_id'].astype(str)
 
-# Rename overlapping columns before merging
-batting.rename(columns=lambda x: f"{x}_batting" if x in fielding.columns and x != "playerID" and x != "yearID" else x, inplace=True)
-pitching.rename(columns=lambda x: f"{x}_pitching" if x in fielding.columns and x != "playerID" and x != "yearID" else x, inplace=True)
-
-# Merge datasets
-data = pd.merge(fielding, batting, on=['playerID', 'yearID'], how='outer')
-data = pd.merge(data, pitching, on=['playerID', 'yearID'], how='outer')
+# Rename 'player_id' in Savant data to match 'playerID'
 savant_pitch_data.rename(columns={'player_id': 'playerID'}, inplace=True)
-data = pd.merge(data, savant_pitch_data, on='playerID', how='left')
-data = pd.merge(data, players[['playerID', 'birthYear']], on='playerID', how='left')
 
-# Resolve duplicate columns by merging "_x" and "_y" suffixes
-for col in data.columns:
-    if col.endswith('_x'):
-        base_col = col[:-2]  # Remove "_x" suffix
-        if f'{base_col}_y' in data.columns:
-            # Combine values, prioritize "_x", and drop "_y"
-            data[base_col] = data[col].fillna(data[f'{base_col}_y'])
-            data.drop(columns=[col, f'{base_col}_y'], inplace=True)
+# Filter relevant columns for each dataset
+# Pitching-specific columns
+pitching_cols = [
+    'playerID', 'yearID', 'teamID', 'stint', 'W', 'L', 'G', 'GS', 'CG', 'SHO', 'SV', 
+    'IPouts', 'H', 'ER', 'HR', 'BB', 'SO', 'BAOpp', 'ERA', 'WP', 'BK', 'BFP', 'GF'
+]
 
-# Add age column
-data['age'] = data['yearID'] - data['birthYear']
-data.drop(columns=['yearID', 'birthYear'], inplace=True)
+# Combine batting and fielding columns for position players
+batting_cols = [
+    'playerID', 'yearID', 'teamID', 'stint', 'G', 'AB', 'R', 'H', '2B', '3B', 'HR', 
+    'RBI', 'SB', 'CS', 'BB', 'SO', 'IBB', 'HBP', 'SH', 'SF', 'GIDP'
+]
+fielding_cols = [
+    'playerID', 'yearID', 'teamID', 'stint', 'POS', 'G', 'GS', 'InnOuts', 'PO', 'A', 
+    'E', 'DP', 'PB', 'WP', 'SB', 'CS', 'ZR'
+]
 
-# Separate pitchers and field players without imputing missing values
-field_players = data[data.get('HBP', pd.Series()).notna()].copy()
-pitchers = data[data.get('ERA', pd.Series()).notna()].copy()
+# Filter each dataset to keep only relevant columns
+pitching = pitching[pitching_cols]
+batting = batting[[col for col in batting_cols if col in batting.columns]]
+fielding = fielding[[col for col in fielding_cols if col in fielding.columns]]
 
-# Feature Selection for Field Players
-if not field_players.empty:
-    X_field = field_players.select_dtypes(include=[np.number]).dropna(axis=1, how='any')  # Drop columns with any NaNs
+# Merge batting and fielding data to form a combined position player dataset
+position_players = pd.merge(batting, fielding, on=['playerID', 'yearID', 'teamID', 'stint', 'G'], how='outer')
+
+# Add birth year for age calculation to both datasets
+players = players[['playerID', 'birthYear']]
+
+# Merge position player stats with player info to calculate age
+position_players = pd.merge(position_players, players, on='playerID', how='left')
+position_players['age'] = position_players['yearID'] - position_players['birthYear']
+position_players.drop(columns=['birthYear'], inplace=True)
+
+position_players.to_csv('position_players_dataframe.csv')
+
+# Merge pitching stats with player info to calculate age
+pitchers = pd.merge(pitching, players, on='playerID', how='left')
+pitchers['age'] = pitchers['yearID'] - pitchers['birthYear']
+pitchers.drop(columns=['birthYear'], inplace=True)
+
+pitchers.to_csv('pitchers_dataframe.csv')
+
+# Feature Selection for Position Players
+if not position_players.empty:
+    # Fill NaN values with 0 or mean to avoid dropping columns
+    X_pos = position_players.select_dtypes(include=[np.number]).fillna(0)  # Fills NaNs with 0
 
     # Perform feature selection with a random target
-    selector_field = SelectKBest(score_func=f_regression, k='all')
-    selector_field.fit(X_field, np.random.rand(len(X_field)))  # Use random target as placeholder
-    selected_features_field = X_field.columns[selector_field.get_support(indices=True)]
+    selector_pos = SelectKBest(score_func=f_regression, k='all')
+    selector_pos.fit(X_pos, np.random.rand(len(X_pos)))  # Use random target as placeholder
+    selected_features_pos = X_pos.columns[selector_pos.get_support(indices=True)]
 
-    print("\nField Players - Selected Features:")
-    print(selected_features_field)
+    print("\nPosition Players - Selected Features:")
+    print(selected_features_pos)
 
-    # Plot correlation matrix of selected features for field players
+    # Plot correlation matrix of selected features for position players
     plt.figure(figsize=(10, 8))
-    sns.heatmap(X_field[selected_features_field].corr(), annot=False, cmap="coolwarm", cbar=True)
-    plt.title("Correlation Matrix of Selected Features for Field Players")
+    sns.heatmap(X_pos[selected_features_pos].corr(), annot=False, cmap="coolwarm", cbar=True)
+    plt.title("Correlation Matrix of Selected Features for Position Players")
     plt.show()
+
 
 # Feature Selection for Pitchers
 if not pitchers.empty:
-    X_pitch = pitchers.select_dtypes(include=[np.number]).dropna(axis=1, how='any')  # Drop columns with any NaNs
+    # Fill NaN values with 0 to avoid dropping columns
+    X_pitch = pitchers.select_dtypes(include=[np.number]).fillna(0)
 
     # Perform feature selection with a random target
     selector_pitch = SelectKBest(score_func=f_regression, k='all')
