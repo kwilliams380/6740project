@@ -40,9 +40,9 @@ fielding = (
 
 position_players = pd.merge(batting, fielding, on=['playerID', 'yearID', 'teamID'], how='outer')
 position_players = pd.merge(position_players, salaries.drop('lgID',axis=1), on=['playerID', 'yearID', 'teamID'], how='left')
-position_players = pd.merge(position_players, players, on='playerID', how='left')
-position_players['age'] = position_players['yearID'] - position_players['birthYear']
-position_players.drop(columns=['birthYear'], inplace=True)
+# position_players = pd.merge(position_players, players, on='playerID', how='left')
+# position_players['age'] = position_players['yearID'] - position_players['birthYear']
+# position_players.drop(columns=['birthYear'], inplace=True)
 # Remove catcher-specific rows
 position_players = position_players.drop(columns=['PB', 'WP', 'SB_y', 'CS_y', 'ZR'])
 
@@ -52,61 +52,53 @@ pitchers['age'] = pitchers['yearID'] - pitchers['birthYear']
 pitchers.drop(columns=['birthYear'], inplace=True)
 
 if not position_players.empty:
-    ## PREPROCESSING
-    # Select columns between 1985 and 2016 - years with salary data
-    position_players_f = position_players[(position_players['yearID'] >= 1985) & (position_players['yearID'] <= 2016)]
-    print("Number of rows before filtering:", position_players.shape[0])
-    print("Number of rows after filtering:", position_players_f.shape[0])
+    def prepare_salary_prediction_dataset(df):
+        df = df.sort_values(['playerID', 'yearID'])
+        
+        # Create a list to store valid rows
+        valid_rows = []
+        
+        # Group by player
+        for _, player_group in df.groupby('playerID'):
+            # Iterate through player's seasons
+            for i in range(1, len(player_group)):
+                # Previous season's stats
+                prev_stats = player_group.iloc[i-1]
+                # Current season's salary
+                current_salary = player_group.iloc[i]['salary']
+                
+                # Create a row with previous year's stats and current year's salary
+                row = prev_stats.copy()
+                row['target_salary'] = current_salary
+                valid_rows.append(row)
+        
+        # Convert to DataFrame
+        prepared_df = pd.DataFrame(valid_rows)
+        
+        return prepared_df
 
-    print("Number of columns with NaN value in 'salary' column:", position_players_f['salary'].isnull().sum())
+    # Prepare the dataset
+    position_players_f = position_players[(position_players['yearID'] >= 1985) & (position_players['yearID'] <= 2016)]
     position_players_f = position_players_f.dropna(subset=['salary'])
 
-    X_position = position_players_f.drop(columns=['playerID', 'yearID', 'teamID', 'salary', 'stint_x', 'stint_y'])
-    y_position = position_players_f['salary']
+    # Create dataset where each row is previous year's stats and current year's salary
+    salary_prediction_df = prepare_salary_prediction_dataset(position_players_f)
 
-    # Fill 0s in rows of players who batted but never fielded
-    kept_fielding_cols = ['G_y', 'GS', 'InnOuts', 'PO', 'A', 'E', 'DP']
-    X_position.loc[X_position[kept_fielding_cols].isna().all(axis=1), kept_fielding_cols] = 0
+    # Select features and target
+    X = salary_prediction_df.drop(columns=['playerID', 'yearID', 'teamID', 'salary', 'target_salary', 'stint_x', 'stint_y'])
+    y = salary_prediction_df['target_salary']
 
-    scaler = StandardScaler()
-    X_position_scaled = scaler.fit_transform(X_position)
-    
-    pca = PCA()
-    X_pca = pca.fit_transform(X_position_scaled)
+    # Split and scale
+    X_scaled = StandardScaler().fit_transform(X)
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
 
-    print("Final number of rows: ", X_pca.shape[0])
-    
-    X_train, X_test, y_train, y_test = train_test_split(X_pca, y_position, test_size=0.2, random_state=0)
+    # Model
+    model = RandomForestRegressor(random_state=42)
+    model.fit(X_train, y_train)
 
-    hyperparam_grid = {
-        'n_estimators': [50, 75, 100, 125, 150, 175, 200, 300, 400, 500],
-        'max_depth': [None, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
-    }
-
-    model = RandomForestRegressor(random_state=0)
-    grid_search = GridSearchCV(model, hyperparam_grid, scoring='neg_mean_squared_error', n_jobs=-1)
-    grid_search.fit(X_train, y_train)
-
-    best_params = grid_search.best_params_
-    print("Best Hyperparameters:", best_params)
-
-    best_model = grid_search.best_estimator_
-    y_pred = best_model.predict(X_test)
-
-    mse = mean_squared_error(y_test, y_pred)
-    mae = mean_absolute_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
-
-    print("Mean Squared Error:", mse)
-    print("Mean Absolute Error:", mae)
-    print("R^2 Score:", r2)
-
-
-
-# VIF / Correlation - PCA to fix? Try to reduce. Ben has VIF at ~30
-# Dollar valuation of player - Built model to predict salary
-  # Ideally, same structure of inputs as survival analysis
-  # Predict next year's salary
-  # 
+    # Evaluate
+    y_pred = model.predict(X_test)
+    print("Mean Squared Error:", mean_squared_error(y_test, y_pred))
+    print("R-squared:", r2_score(y_test, y_pred))
 
 
