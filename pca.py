@@ -4,6 +4,9 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+PITCHERS = True
+POSITION_PLAYERS = True
+
 fielding = pd.read_csv('Data/Lahman/Fielding.csv')
 batting = pd.read_csv('Data/Lahman/Batting.csv')
 pitching = pd.read_csv('Data/Lahman/Pitching.csv')
@@ -46,7 +49,7 @@ pitchers = pd.merge(pitching, players, on='playerID', how='left')
 pitchers['age'] = pitchers['yearID'] - pitchers['birthYear']
 pitchers.drop(columns=['birthYear'], inplace=True)
 
-if not position_players.empty:
+if not position_players.empty and POSITION_PLAYERS:
     # Select columns after 1954 - removes tons of NaNs
     position_players_f = position_players[(position_players['yearID'] > 1954)]
     print("Number of rows before filtering:", position_players.shape[0])
@@ -78,3 +81,33 @@ if not position_players.empty:
     plt.show()
 
     pca_df.to_csv('PositionPlayersPCA.csv', index=False)
+
+if not pitchers.empty and PITCHERS:
+    pitchers_f = pitchers.copy()
+
+    pitchers_f['BAOpp'] = pitchers_f.groupby('playerID')['BAOpp'].transform(lambda x: x.fillna(x.mean()))
+    pitchers_f['ERA'] = pitchers_f.apply(lambda row: ((9 * row['ER']) / row['IPouts'] if row['IPouts'] != 0 else 0) if pd.isnull(row['ERA']) else row['ERA'], axis=1)
+    pitchers_f['BFP'] = pitchers_f.apply(lambda row: row['H'] + row['BB'] if pd.isnull(row['BFP']) else row['BFP'], axis=1)
+    X_pitchers = pitchers_f.drop(columns=['playerID', 'yearID', 'teamID', 'stint'])
+    X_pitchers = X_pitchers.dropna(subset=['BAOpp'])
+    
+    scaler = StandardScaler()
+    X_pitchers_scaled = scaler.fit_transform(X_pitchers)
+    
+    pca = PCA()
+    X_pca = pca.fit_transform(X_pitchers_scaled)
+    pca_df = pd.DataFrame(X_pca, columns=[f'PC{i+1}' for i in range(X_pca.shape[1])])
+
+    print("Explained Variance Ratio:", pca.explained_variance_ratio_)
+    # print("Cumulative Explained Variance Ratio:", pca.explained_variance_ratio_.cumsum())
+    print("Number of components to explain 80% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.8).sum() + 1)
+    print("Number of components to explain 90% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.9).sum() + 1)
+    print("Number of components to explain 95% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.95).sum() + 1)
+    print("Total number of components:", pca.n_components_)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(pca_df.corr(), annot=False, cmap="coolwarm", cbar=True)
+    plt.title("Correlation Matrix of Selected Features for Pitchers")
+    plt.show()
+
+    pca_df.to_csv('PitchersPCA.csv', index=False)
