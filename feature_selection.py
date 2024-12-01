@@ -98,7 +98,6 @@ position_players_grouped = (
     .reset_index()  # Reset the index for a clean dataframe
 )
 
-
 position_players_grouped.to_csv('position_players.csv', index=False)
 
 # Merge pitching stats with player info to calculate age
