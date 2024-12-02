@@ -73,6 +73,7 @@ if not position_players.empty and POSITION_PLAYERS:
     print("Number of components to explain 80% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.8).sum() + 1)
     print("Number of components to explain 90% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.9).sum() + 1)
     print("Number of components to explain 95% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.95).sum() + 1)
+    print("Number of components to explain 99% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.99).sum() + 1)
     print("Total number of components:", pca.n_components_)
 
     plt.figure(figsize=(10, 8))
@@ -103,7 +104,17 @@ if not pitchers.empty and PITCHERS:
     print("Number of components to explain 80% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.8).sum() + 1)
     print("Number of components to explain 90% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.9).sum() + 1)
     print("Number of components to explain 95% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.95).sum() + 1)
+    print("Number of components to explain 99% of variance:", (pca.explained_variance_ratio_.cumsum() < 0.99).sum() + 1)
     print("Total number of components:", pca.n_components_)
+    
+    explained_variance_ratio = pca.explained_variance_ratio_.cumsum()
+    num_components = range(1, len(explained_variance_ratio) + 1)
+
+    plt.plot(num_components, explained_variance_ratio, marker='o')
+    plt.xlabel('Number of Components')
+    plt.ylabel('Explained Variance Ratio')
+    plt.title('Explained Variance Ratio vs Number of Components')
+    plt.show()
 
     plt.figure(figsize=(10, 8))
     sns.heatmap(pca_df.corr(), annot=False, cmap="coolwarm", cbar=True)
